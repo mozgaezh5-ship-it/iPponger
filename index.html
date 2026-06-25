@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Ping Pong Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #000;
+            font-family: -apple-system, Helvetica, Arial, sans-serif;
+        }
+        canvas {
+            display: block; position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%; -webkit-transform: translateZ(0); transform: translateZ(0);
+        }
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: rgba(0,0,0,0.85); color: #fff; z-index: 10;
+        }
+        h1 { margin-bottom: 5px; font-size: 32px; letter-spacing: 2px; }
+        p { margin-bottom: 25px; color: #aaa; font-size: 14px; text-align: center; max-width: 80%; }
+        button {
+            padding: 14px 40px; font-size: 18px; font-weight: bold;
+            background: #fff; border: none; border-radius: 25px;
+            cursor: pointer; -webkit-appearance: none; box-shadow: 0 4px 10px rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h1>PING PONG</h1>
+        <p>Управление: водите пальцем по экрану.<br>Звук включится после нажатия.</p>
+        <button id="startBtn">ИГРАТЬ</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        var canvas = document.getElementById('gameCanvas');
+        var ctx = canvas.getContext('2d');
+        var overlay = document.getElementById('overlay');
+        var startBtn = document.getElementById('startBtn');
+
+        var dpr = window.devicePixelRatio || 1;
+        var width, height;
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        var paddleWidth = 80;
+        var paddleHeight = 12;
+        var ballRadius = 8;
+
+        var player = { x: 0, y: 0, score: 0 };
+        var ai = { x: 0, y: 0, score: 0 };
+        var ball = { x: 0, y: 0, vx: 0, vy: 0 };
+        
+        var isPlaying = false;
+        var audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) {
+                    audioCtx = new AudioContextClass();
+                }
+            }
+        }
+
+        function playTone(freq, type, duration) {
+            if (!audioCtx) return;
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                var osc = audioCtx.createOscillator();
+                var gain = audioCtx.createGain();
+                
+                osc.type = type || 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start(0);
+                osc.stop(audioCtx.currentTime + duration);
+            } catch(e) {
+                console.log("Audio error", e);
+            }
+        }
+
+        function initGame() {
+            player.x = width / 2 - paddleWidth / 2;
+            player.y = height - paddleHeight - 35; 
+            ai.x = width / 2 - paddleWidth / 2;
+            ai.y = 35;
+            resetBall();
+        }
+
+        function resetBall() {
+            ball.x = width / 2;
+            ball.y = height / 2;
+            ball.vx = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.random() * 2);
+            ball.vy = (Math.random() > 0.5 ? 1 : -1) * 4;
+        }
+
+        function handleTouch(e) {
+            if (!isPlaying) return;
+            e.preventDefault();
+            var touch = e.touches[0];
+            player.x = touch.clientX - paddleWidth / 2;
+            if (player.x < 0) player.x = 0;
+            if (player.x > width - paddleWidth) player.x = width - paddleWidth;
+        }
+
+        window.addEventListener('touchstart', handleTouch, { passive: false });
+        window.addEventListener('touchmove', handleTouch, { passive: false });
+
+        startBtn.addEventListener('click', function() {
+            initAudio();
+            overlay.style.display = 'none';
+            isPlaying = true;
+            initGame();
+            playTone(523.25, 'square', 0.15); 
+            animate();
+        });
+
+        function animate() {
+            if (!isPlaying) return;
+            requestAnimationFrame(animate);
+            update();
+            render();
+        }
+
+        function update() {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            if (ball.x - ballRadius < 0) {
+                ball.x = ballRadius; ball.vx = -ball.vx;
+                playTone(300, 'sine', 0.08);
+            }
+            if (ball.x + ballRadius > width) {
+                ball.x = width - ballRadius; ball.vx = -ball.vx;
+                playTone(300, 'sine', 0.08);
+            }
+
+            var aiTarget = ball.x - paddleWidth / 2;
+            ai.x += (aiTarget - ai.x) * 0.13;
+            if (ai.x < 0) ai.x = 0;
+            if (ai.x > width - paddleWidth) ai.x = width - paddleWidth;
+
+            if (ball.vy > 0 && ball.y + ballRadius >= player.y && ball.y - ballRadius <= player.y + paddleHeight) {
+                if (ball.x >= player.x && ball.x <= player.x + paddleWidth) {
+                    ball.vy = -ball.vy;
+                    var hitPos = (ball.x - (player.x + paddleWidth / 2)) / (paddleWidth / 2);
+                    ball.vx = hitPos * 5;
+                    ball.vy *= 1.05;
+                    playTone(440, 'triangle', 0.1);
+                }
+            }
+
+            if (ball.vy < 0 && ball.y - ballRadius <= ai.y + paddleHeight && ball.y + ballRadius >= ai.y) {
+                if (ball.x >= ai.x && ball.x <= ai.x + paddleWidth) {
+                    ball.vy = -ball.vy;
+                    var hitPos = (ball.x - (ai.x + paddleWidth / 2)) / (paddleWidth / 2);
+                    ball.vx = hitPos * 5;
+                    ball.vy *= 1.05;
+                    playTone(380, 'triangle', 0.1);
+                }
+            }
+
+            if (ball.y < 0) {
+                player.score++;
+                playTone(660, 'square', 0.25);
+                resetBall();
+            } else if (ball.y > height) {
+                ai.score++;
+                playTone(180, 'sawtooth', 0.3);
+                resetBall();
+            }
+        }
+
+        function render() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, height / 2); ctx.lineTo(width, height / 2);
+            ctx.stroke();
+
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(player.x, player.y, paddleWidth, paddleHeight);
+            ctx.fillRect(ai.x, ai.y, paddleWidth, paddleHeight);
+
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ballRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.font = 'bold 44px -apple-system, Helvetica, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(ai.score, width / 2, height / 4);
+            ctx.fillText(player.score, width / 2, (height / 4) * 3);
+        }
+    </script>
+</body>
+</html>

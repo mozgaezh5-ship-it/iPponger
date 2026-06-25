@@ -1,0 +1,39 @@
+name: Build Fast iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-13
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Compile Native iOS App
+      run: |
+        mkdir -p build_output/Payload/PingPong.app
+        
+        clang -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+              -arch armv7 -arch arm64 \
+              -miphoneos-version-min=7.0 \
+              -fobjc-arc \
+              -framework UIKit -framework Foundation -framework CoreGraphics \
+              main.m -o build_output/Payload/PingPong.app/PingPong
+              
+        cp Info.plist build_output/Payload/PingPong.app/Info.plist
+        cp index.html build_output/Payload/PingPong.app/index.html
+
+    - name: Package to IPA File
+      run: |
+        cd build_output
+        zip -r ../PingPong.ipa Payload
+        
+    - name: Upload IPA Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PingPong-iOS7-Native-IPA
+        path: PingPong.ipa
